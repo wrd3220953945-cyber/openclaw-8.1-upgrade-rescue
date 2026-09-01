@@ -1,5 +1,7 @@
 # OpenClaw 8.1 升级后网关启动失败：不用重装，两条命令救回来
 
+*[English version](./README.en.md)*
+
 > 一次真实的救援记录 —— 存量多 Agent 环境从 `2026.7.x` 升级到 `2026.8.1` 后网关拒绝启动。
 > 环境：Windows 10/11 · Node.js 24.x · OpenClaw `2026.7.1-2` → `2026.8.1`
 > 结果：**零重装、零 Agent 重配、零数据丢失**
@@ -317,6 +319,59 @@ openclaw gateway run
 
 好消息是：**大部分配置改动不需要重启**。改完 `openclaw.json` 后直接用 `openclaw config get <路径>` 回读，如果新值已经能读出来，说明网关是实时读配置的，不用重启。
 
+### 坑 6：Agent 工作目录被静默重定向（最隐蔽的一个）
+
+**这个坑不报错、不崩溃，`doctor` 也不提醒**，但它会让你以为数据全丢了。
+
+症状：网关修好、一切正常，但某个 Agent 打开一看 —— 工作目录里空空如也，只有一套全新的 `BOOTSTRAP.md` / `AGENTS.md` / `SOUL.md` / `USER.md`。你辛苦积累的记忆文件、项目目录、历史笔记，全都不见了。
+
+**根因**：8.1 改变了 `agents.defaults.workspace` 的语义。
+
+| 版本 | `agents.defaults.workspace` 的含义 |
+| --- | --- |
+| 8.1 之前 | 没有显式 `workspace` 的 Agent **直接使用**这个目录 |
+| 8.1 之后 | 这个目录被当作**父目录**，Agent 落到 `<父目录>\<agentId>` |
+
+于是如果你的配置是：
+
+```json
+{
+  "agents": {
+    "defaults": { "workspace": "C:\\Users\\<你>\\.openclaw\\workspace" },
+    "entries": {
+      "main": { "name": "Main_Manager" }
+    }
+  }
+}
+```
+
+升级后 `main` 就不再看 `...\workspace\`，而是被扔进新建的 `...\workspace\main\` —— 一个空目录，OpenClaw 还会贴心地给它铺一套全新初始化文件，看上去就像「记忆被重置了」。
+
+**关键点**：写了显式 `workspace` 的 Agent **完全不受影响**。所以典型现场是「6 个 Agent 好的，就 1 个瞎了」，非常容易误判成那一个 Agent 配坏了。
+
+**诊断**：
+
+```powershell
+# 老目录还在不在？内容还全不全？
+Get-ChildItem "$env:USERPROFILE\.openclaw\workspace" -Force | Select-Object Name, LastWriteTime
+
+# 新建的空目录是不是刚刚才出现（时间戳 ≈ 你升级那一刻）？
+Get-ChildItem "$env:USERPROFILE\.openclaw\workspace\<agentId>" -Force
+```
+
+如果老目录内容完好、新目录时间戳是升级时刻 —— **数据一个都没丢，只是 Agent 站错了房间。**
+
+**修法**：给受影响的 Agent 补一条显式 `workspace`，指回原目录。
+
+```bash
+openclaw config set agents.entries.main.workspace "C:\Users\<你>\.openclaw\workspace"
+openclaw config get agents.entries.main.workspace    # 回读确认
+```
+
+然后重启网关（Windows 见坑 5），进去确认 Agent 能读到原来的 `MEMORY.md` 等文件。
+
+> **经验**：升级后不要只验证「网关是否 ready」，还要抽查**每个 Agent 的工作目录解析结果**。路径语义的变更不会报错，只会安静地把你换到另一个房间。
+
 ---
 
 ## 六、安全项：明文凭据（请一定看完）
@@ -380,6 +435,8 @@ openclaw secrets audit --check
 
 5. **`ready` 不等于可用。** 一定要验证到端到端：仪表盘 200、`status` 全绿、日志里有真实模型调用返回 200、遗留文件计数归零。
 
+6. **不报错的变更最危险。** 迁移类故障会大声崩给你看，但**路径/语义类变更是静默的**（坑 6 就是）。升级后除了看网关状态，还要抽查每个 Agent 实际落在哪个工作目录。
+
 ---
 
 ## 附：一键排查清单
@@ -412,6 +469,10 @@ openclaw status
 # 7. 确认遗留物清空（两个都该是 0）
 (Get-ChildItem "$env:USERPROFILE\.openclaw\agents" -Recurse -Filter "sessions.json" -EA SilentlyContinue).Count
 (Get-ChildItem "$env:USERPROFILE\.openclaw\agents" -Recurse -Filter "catalog.json"  -EA SilentlyContinue).Count
+
+# 8. 抽查每个 Agent 的工作目录是否还指向原处（坑 6，静默故障）
+Get-ChildItem "$env:USERPROFILE\.openclaw" -Directory -Force |
+  Where-Object Name -like "workspace*" | Select-Object Name, LastWriteTime
 ```
 
 ---

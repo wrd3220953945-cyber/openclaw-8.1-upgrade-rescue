@@ -133,9 +133,9 @@ The good news: the same `openclaw doctor --fix` clears both gates at once.
 The two gates above are **state** migrations. There is a third one: the **config schema** migration. 8.1 renamed a batch of config keys, and old keys surface as `Unrecognized key`:
 
 ```
-Unrecognized key: env         → renamed to vars
+Unrecognized key: env         → env.{KEY} → env.vars.{KEY}
 Unrecognized key: list        → renamed to entries
-Unrecognized key: timeoutSec  → field name / unit changed
+Unrecognized key: timeoutSec  → field name
 agents.ownership              → new required field
 exec-approvals.json           → format migration
 ```

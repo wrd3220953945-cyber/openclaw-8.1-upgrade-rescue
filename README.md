@@ -17,6 +17,8 @@ openclaw doctor --fix     # 迁移遗留状态（这才是关键）
 openclaw gateway run      # 再启动
 ```
 
+> ⚠️ **`doctor --fix` 必须交互式跑，逐个回答 Y，不要加 `--yes`。** 非交互模式下它会**静默跳过配置键迁移**（`env`→`vars`、`list`→`entries`、`agents.ownership` 等），命令看起来跑完了、网关照样起不来。官方尚未修复：[openclaw/openclaw#133984](https://github.com/openclaw/openclaw/issues/133984)。详见[第三道门](#gate-config)。
+
 → **完整修复流程（含备份与验证）：[第四节](#repair)** · 一键清单：[附录](#checklist)
 
 如果你正打算「删掉重装、重新配置所有 Agent」——**先停手，读完这篇**。
@@ -121,6 +123,37 @@ PreparedModelRuntimeOwnerNotPublishedError:
 配了几个模型 provider 就有几份。**如果只看到「起不来」就认定是配置问题，很容易在第一道门前反复折腾。**
 
 好消息是：同一条 `doctor --fix` 把两道门一起解决。
+
+> ⚠️ **如果 `doctor --fix` 之后仍然崩在这个错误上**，就不是「catalog 没迁移」，而可能是官方至今未修的 **fingerprint drift** 代码缺陷：一次瞬时的指纹不一致会**永久卡死网关**。参见 [openclaw/openclaw#127710](https://github.com/openclaw/openclaw/issues/127710)（open）与修复 PR [#127712](https://github.com/openclaw/openclaw/pull/127712)（**未合入**）。撞上这种情况时，`doctor --fix` 重跑多少次也没用，得去跟上游。
+
+<a id="gate-config"></a>
+
+### 第三道门：配置 schema 迁移（官方已知缺陷，最容易被静默跳过）
+
+上面两道门都是**状态**迁移。还有一道是**配置 schema** 迁移 —— 8.1 改了一批配置键名，旧键会报 `Unrecognized key`：
+
+```
+Unrecognized key: env         → 改名为 vars
+Unrecognized key: list        → 改为 entries
+Unrecognized key: timeoutSec  → 字段名/单位变更
+agents.ownership              → 新增必填项
+exec-approvals.json           → 格式迁移
+```
+
+**坑在哪里**：这些配置键迁移需要**逐项交互确认**。一旦在非交互环境里跑（加了 `--yes`、或由脚本/CI 调起），它们会被**静默跳过** —— 命令输出看上去一切正常，网关依然起不来，而你已经以为「迁移做过了」，于是又去怀疑自己的配置。
+
+官方 issue：[openclaw/openclaw#133984](https://github.com/openclaw/openclaw/issues/133984) —— 标题直指 *“startup and `doctor --fix` both skip config-key migrations non-interactively”*，**截稿时仍为 open**。
+
+**正确做法**：
+
+```bash
+openclaw doctor --fix     # 交互式，逐个回答 Y；切勿加 --yes
+openclaw doctor           # 跑完回读：不应再出现 Unrecognized key
+```
+
+> **三道门总结**：遗留会话库（状态）、provider catalog（状态）、配置键名（schema）。前两道 `doctor --fix` 自动搞定，**第三道必须交互式才会做**。
+
+> 数据来源：第一、第二道门为本机实测；第三道门为另一台机器实测 + 上述官方 issue 交叉确认（本机当时是交互式跑的，因此没撞上这道门）。
 
 ---
 
@@ -431,11 +464,11 @@ openclaw secrets audit --check
 
 ---
 
-## 八、给同样踩坑的人：五条经验
+## 八、给同样踩坑的人：七条经验
 
 1. **先读日志，再改配置。** `~/.openclaw/logs/stability/*.json` 里的 `error.message` 通常**直接写着解决方案**。配置语法没错却起不来，八成不是配置问题。
 
-2. **大版本升级 = 先跑迁移。** 遇到启动失败，第一反应应该是 `openclaw doctor --fix`，而不是重装。它是官方迁移工具，不是玄学修复。
+2. **大版本升级 = 先跑迁移，而且要交互式跑。** 遇到启动失败，第一反应应该是 `openclaw doctor --fix`，而不是重装。但**别加 `--yes`** —— 非交互下会跳过配置键迁移（[#133984](https://github.com/openclaw/openclaw/issues/133984)）。
 
 3. **备份是动手的前提，不是可选项。** 而且要备 `agents/` 整个目录（会话历史在里面），不只是 `openclaw.json`。
 
@@ -444,6 +477,8 @@ openclaw secrets audit --check
 5. **`ready` 不等于可用。** 一定要验证到端到端：仪表盘 200、`status` 全绿、日志里有真实模型调用返回 200、遗留文件计数归零。
 
 6. **不报错的变更最危险。** 迁移类故障会大声崩给你看，但**路径/语义类变更是静默的**（坑 6 就是）。升级后除了看网关状态，还要抽查每个 Agent 实际落在哪个工作目录。
+
+7. **修复工具本身也可能有缺陷，别当黑盒。** `doctor --fix` 非交互下会跳过配置键迁移（[#133984](https://github.com/openclaw/openclaw/issues/133984)）；fingerprint drift 会永久卡死网关（[#127710](https://github.com/openclaw/openclaw/issues/127710)，修复 PR 未合）。跑完修复命令仍要**回读验证**；现象和文档对不上时，先去上游 issue 列表搜一把，别先怀疑自己。
 
 ---
 
@@ -465,8 +500,11 @@ robocopy "$env:USERPROFILE\.openclaw\agents" "$bk\agents" /E /NFL /NDL /NJH /NJS
 # 3. 只读诊断
 openclaw doctor
 
-# 4. 执行迁移
+# 4. 执行迁移（交互式逐个 Y；切勿加 --yes，否则跳过配置键迁移）
 openclaw doctor --fix
+
+# 4b. 回读：不应再出现 Unrecognized key
+openclaw doctor
 
 # 5. 启动
 openclaw gateway run

@@ -17,6 +17,8 @@ openclaw doctor --fix     # migrate legacy state (this is the actual fix)
 openclaw gateway run      # then start
 ```
 
+> ⚠️ **Run `doctor --fix` interactively, answering Y to each prompt. Do not add `--yes`.** In non-interactive mode it **silently skips config-key migrations** (`env`→`vars`, `list`→`entries`, `agents.ownership`, ...), so the command looks like it succeeded while the gateway still won't start. Still unfixed upstream: [openclaw/openclaw#133984](https://github.com/openclaw/openclaw/issues/133984). See [the third gate](#gate-config).
+
 → **Full procedure (with backup and verification): [Section 4](#repair)** · One-shot checklist: [Appendix](#checklist)
 
 If you're about to "wipe it and reconfigure every agent from scratch" — **stop and read this first**.
@@ -121,6 +123,37 @@ That's the provider catalog also being unmigrated, located at:
 One per model provider you've configured. **If all you see is "it won't start," it's easy to burn hours flailing at the first gate.**
 
 The good news: the same `openclaw doctor --fix` clears both gates at once.
+
+> ⚠️ **If you still crash on this error after `doctor --fix`**, it isn't "the catalog wasn't migrated" — it may be the still-unfixed **fingerprint drift** defect, where a single transient fingerprint mismatch **permanently wedges the gateway**. See [openclaw/openclaw#127710](https://github.com/openclaw/openclaw/issues/127710) (open) and fix PR [#127712](https://github.com/openclaw/openclaw/pull/127712) (**not merged**). In that case re-running `doctor --fix` will never help; take it upstream.
+
+<a id="gate-config"></a>
+
+### The third gate: config schema migration (known upstream defect, easiest to skip silently)
+
+The two gates above are **state** migrations. There is a third one: the **config schema** migration. 8.1 renamed a batch of config keys, and old keys surface as `Unrecognized key`:
+
+```
+Unrecognized key: env         → renamed to vars
+Unrecognized key: list        → renamed to entries
+Unrecognized key: timeoutSec  → field name / unit changed
+agents.ownership              → new required field
+exec-approvals.json           → format migration
+```
+
+**Where the trap is**: these config-key migrations require **per-item interactive confirmation**. Run it non-interactively (with `--yes`, or from a script/CI) and they are **silently skipped** — the output looks clean, the gateway still won't start, and you now believe "the migration was already done," so you go back to blaming your own config.
+
+Upstream issue: [openclaw/openclaw#133984](https://github.com/openclaw/openclaw/issues/133984) — titled *“startup and `doctor --fix` both skip config-key migrations non-interactively”*, **still open at the time of writing**.
+
+**Do this instead**:
+
+```bash
+openclaw doctor --fix     # interactive, answer Y to each; never add --yes
+openclaw doctor           # read back: no more Unrecognized key
+```
+
+> **Three gates, summarized**: legacy session store (state), provider catalog (state), config keys (schema). `doctor --fix` handles the first two automatically; **the third only happens interactively**.
+
+> Provenance: gates one and two were observed first-hand on this machine; the third gate comes from a second machine plus the upstream issue above (this machine happened to run interactively, so it never hit that gate).
 
 ---
 
@@ -431,11 +464,11 @@ Three minimum requirements, worth doing right now:
 
 ---
 
-## 8. Six lessons for anyone hitting the same wall
+## 8. Seven lessons for anyone hitting the same wall
 
 1. **Read the logs before editing config.** The `error.message` in `~/.openclaw/logs/stability/*.json` usually **states the solution outright**. Valid config that won't start is almost never a config problem.
 
-2. **Major upgrade = run the migration first.** On startup failure, your first move should be `openclaw doctor --fix`, not a reinstall. It's the official migration tool, not folk magic.
+2. **Major upgrade = run the migration first, and run it interactively.** On startup failure, your first move should be `openclaw doctor --fix`, not a reinstall. But **don't add `--yes`** — non-interactive runs skip config-key migrations ([#133984](https://github.com/openclaw/openclaw/issues/133984)).
 
 3. **A backup is the precondition for acting, not an option.** And back up the whole `agents/` directory (session history lives there), not just `openclaw.json`.
 
@@ -444,6 +477,8 @@ Three minimum requirements, worth doing right now:
 5. **`ready` does not mean usable.** Verify end to end: dashboard 200, `status` all green, a real model call returning 200 in the logs, legacy file counts at zero.
 
 6. **The changes that don't error are the dangerous ones.** Migration failures crash loudly, but **path/semantics changes are silent** (pitfall 6 is exactly that). After upgrading, check where each agent's workspace actually resolves, not just the gateway's status.
+
+7. **The repair tool itself can have defects — don't treat it as a black box.** `doctor --fix` skips config-key migrations non-interactively ([#133984](https://github.com/openclaw/openclaw/issues/133984)); fingerprint drift can permanently wedge the gateway ([#127710](https://github.com/openclaw/openclaw/issues/127710), fix PR unmerged). Always **read back and verify** after running a fix command; when behavior contradicts the docs, search the upstream issue list before doubting yourself.
 
 ---
 
@@ -465,8 +500,11 @@ robocopy "$env:USERPROFILE\.openclaw\agents" "$bk\agents" /E /NFL /NDL /NJH /NJS
 # 3. read-only diagnosis
 openclaw doctor
 
-# 4. run the migration
+# 4. run the migration (interactive, Y each; never --yes, or config-key migrations are skipped)
 openclaw doctor --fix
+
+# 4b. read back: no more Unrecognized key
+openclaw doctor
 
 # 5. start
 openclaw gateway run

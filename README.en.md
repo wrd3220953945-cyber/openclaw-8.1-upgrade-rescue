@@ -17,7 +17,11 @@ openclaw doctor --fix     # migrate legacy state (this is the actual fix)
 openclaw gateway run      # then start
 ```
 
+→ **Full procedure (with backup and verification): [Section 4](#4-full-repair-procedure)** · One-shot checklist: [Appendix](#appendix-one-shot-triage-checklist)
+
 If you're about to "wipe it and reconfigure every agent from scratch" — **stop and read this first**.
+
+There is also a **silent side effect that raises no error**: 8.1 changed how agent workspace paths resolve, so some agents get quietly moved to an empty directory, which looks like "all my memory is gone" (nothing is actually lost). After you get it starting again, please check [Pitfall 6](#pitfall-6-agent-workspace-silently-redirected-the-sneakiest-one).
 
 ---
 

@@ -133,9 +133,9 @@ PreparedModelRuntimeOwnerNotPublishedError:
 上面两道门都是**状态**迁移。还有一道是**配置 schema** 迁移 —— 8.1 改了一批配置键名，旧键会报 `Unrecognized key`：
 
 ```
-Unrecognized key: env         → 改名为 vars
+Unrecognized key: env         → env.{KEY} → env.vars.{KEY}
 Unrecognized key: list        → 改为 entries
-Unrecognized key: timeoutSec  → 字段名/单位变更
+Unrecognized key: timeoutSec  → 字段名
 agents.ownership              → 新增必填项
 exec-approvals.json           → 格式迁移
 ```

@@ -17,11 +17,11 @@ openclaw doctor --fix     # migrate legacy state (this is the actual fix)
 openclaw gateway run      # then start
 ```
 
-→ **Full procedure (with backup and verification): [Section 4](#4-full-repair-procedure)** · One-shot checklist: [Appendix](#appendix-one-shot-triage-checklist)
+→ **Full procedure (with backup and verification): [Section 4](#repair)** · One-shot checklist: [Appendix](#checklist)
 
 If you're about to "wipe it and reconfigure every agent from scratch" — **stop and read this first**.
 
-There is also a **silent side effect that raises no error**: 8.1 changed how agent workspace paths resolve, so some agents get quietly moved to an empty directory, which looks like "all my memory is gone" (nothing is actually lost). After you get it starting again, please check [Pitfall 6](#pitfall-6-agent-workspace-silently-redirected-the-sneakiest-one).
+There is also a **silent side effect that raises no error**: 8.1 changed how agent workspace paths resolve, so some agents get quietly moved to an empty directory, which looks like "all my memory is gone" (nothing is actually lost). After you get it starting again, please check [Pitfall 6](#pitfall-6).
 
 ---
 
@@ -123,6 +123,8 @@ One per model provider you've configured. **If all you see is "it won't start," 
 The good news: the same `openclaw doctor --fix` clears both gates at once.
 
 ---
+
+<a id="repair"></a>
 
 ## 4. Full repair procedure
 
@@ -323,6 +325,8 @@ openclaw gateway run
 
 Good news: **most config changes don't need a restart at all.** After editing `openclaw.json`, read it back with `openclaw config get <path>`; if the new value is already visible, the gateway reads config live and no restart is needed.
 
+<a id="pitfall-6"></a>
+
 ### Pitfall 6: Agent workspace silently redirected (the sneakiest one)
 
 **This one throws no error, never crashes, and `doctor` won't mention it** — but it will make you think all your data is gone.
@@ -442,6 +446,8 @@ Three minimum requirements, worth doing right now:
 6. **The changes that don't error are the dangerous ones.** Migration failures crash loudly, but **path/semantics changes are silent** (pitfall 6 is exactly that). After upgrading, check where each agent's workspace actually resolves, not just the gateway's status.
 
 ---
+
+<a id="checklist"></a>
 
 ## Appendix: one-shot triage checklist
 
